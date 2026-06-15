@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
 # Rename "My AI Assistant" to something meaningful for your domain.
 # Example: "Alpine Trail Co. Assistant", "MediHelper", "HRBot"
 app = FastAPI(
-    title="My AI Assistant",  # TODO: rename this to your domain assistant's name
+    title="My AI BlockSeBlock Assistant",  # TODO: rename this to your domain assistant's name
     description="Domain-Specific AI Assistant — AI Engineering Bootcamp, BlockseBlock",
     version="1.0.0",
     lifespan=lifespan,
