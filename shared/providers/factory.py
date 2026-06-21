@@ -8,8 +8,6 @@ Usage:
     provider = get_provider()           # LLM provider (chat/agents/RAG)
     voice    = get_provider("voice")    # Voice provider (STT/TTS, Feature 10)
 """
-import functools
-
 from shared.config import settings
 from shared.providers.base import LLMProvider
 
@@ -106,7 +104,11 @@ def _validate_fields(provider: str, required_settings: list[str]) -> None:
         )
 
 
-@functools.lru_cache(maxsize=4)
+# Cache keyed by (role, provider_name) so switching LLM_PROVIDER in .env and
+# restarting (or using uvicorn --reload) picks up the new provider automatically.
+_provider_cache: dict[tuple[str, str], LLMProvider] = {}
+
+
 def get_provider(role: str = "llm") -> LLMProvider:
     """
     Return the provider instance for the given role.
@@ -117,8 +119,9 @@ def get_provider(role: str = "llm") -> LLMProvider:
               to LLM_PROVIDER — so students who use a speech-capable provider
               everywhere don't need to set VOICE_PROVIDER separately.
 
-    The result is cached — provider construction (which may create HTTP clients)
-    only happens once per process, regardless of how many times this is called.
+    Results are cached per (role, provider_name) — switching LLM_PROVIDER in
+    .env and restarting the server will use the new provider on the first call.
+    Call get_provider.cache_clear() in tests to force re-instantiation.
     """
     if role == "voice":
         provider_name = settings.effective_voice_provider().lower().strip()
@@ -132,4 +135,17 @@ def get_provider(role: str = "llm") -> LLMProvider:
             f"Edit your .env file to fix this."
         )
 
-    return _build_provider(provider_name)
+    cache_key = (role, provider_name)
+    if cache_key not in _provider_cache:
+        _provider_cache[cache_key] = _build_provider(provider_name)
+    return _provider_cache[cache_key]
+
+
+def _cache_clear() -> None:
+    """Clear the provider cache. Used in tests to force re-instantiation."""
+    _provider_cache.clear()
+
+
+# Expose cache_clear() as an attribute so existing test code that calls
+# get_provider.cache_clear() (mimicking lru_cache API) keeps working.
+get_provider.cache_clear = _cache_clear  # type: ignore[attr-defined]
