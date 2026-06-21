@@ -22,10 +22,14 @@ class OpenAIProvider(LLMProvider):
         base_url: Optional[str] = None,
         model: Optional[str] = None,
     ) -> None:
-        self._api_key = api_key or settings.openai_api_key
+        # Use `is not None` so subclasses (Groq, Ollama, Azure) that explicitly
+        # pass api_key="" don't accidentally inherit the OpenAI key via `or`.
+        self._api_key = api_key if api_key is not None else settings.openai_api_key
         # base_url=None tells the openai library to use the default OpenAI endpoint.
-        self._base_url = base_url or settings.openai_base_url or None
-        self._model = model or settings.openai_model
+        self._base_url = base_url if base_url is not None else (settings.openai_base_url or None)
+        self._model = model if model is not None else settings.openai_model
+        # Subclasses override this to report their own name in LLMResponse.
+        self._provider_name = "openai"
 
     def _get_client(self) -> AsyncOpenAI:
         return AsyncOpenAI(
@@ -79,7 +83,7 @@ class OpenAIProvider(LLMProvider):
             content=message.content,
             tool_calls=normalized_tool_calls,
             raw=completion.model_dump(),
-            provider="openai",
+            provider=self._provider_name,  # "groq", "ollama", etc. for subclasses
             model=self._model,
         )
 
