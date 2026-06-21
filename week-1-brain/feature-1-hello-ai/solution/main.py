@@ -10,6 +10,11 @@ Run this with:
 Then open http://localhost:8000/docs to try the API interactively,
 or open http://localhost:8000 to use the chat UI.
 """
+import os
+os.environ["LLM_PROVIDER"] = "ollama"
+os.environ["OLLAMA_BASE_URL"] = "http://localhost:11434"
+os.environ["OLLAMA_MODEL"] = "llama3.1"
+
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path

@@ -24,6 +24,7 @@ async def check_provider_config() -> None:
     missing or unreachable. This is intentionally loud — students should see the
     error the moment they start the server, not when they send their first message.
     """
+    settings.llm_provider = "ollama"  # TODO: replace with your chosen LLM provider
     provider_name = settings.llm_provider.lower().strip()
 
     # Attempt to build the provider — this validates required env vars.

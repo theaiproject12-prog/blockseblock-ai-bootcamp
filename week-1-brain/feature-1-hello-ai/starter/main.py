@@ -47,6 +47,7 @@ class ChatRequest(BaseModel):
     """The body expected by POST /api/chat."""
 
     # TODO (Feature 1, Step 1): Add a field called `message` of type str.
+    message: str
     # This is what the user sends to the assistant.
     # Hint: the syntax is:  field_name: field_type
     pass
@@ -69,15 +70,22 @@ async def chat(request: ChatRequest) -> ChatResponse:
     # TODO (Feature 1, Step 2): Implement this function.
     #
     # 1. Create a `messages` list with two dicts:
-    #      - {"role": "system", "content": "You are a helpful AI assistant for [YOUR_DOMAIN]. ..."}
-    #        Replace [YOUR_DOMAIN] with your chosen domain — this is the assistant's personality.
-    #      - {"role": "user", "content": request.message}
+    messages = [
+        {
+    "content": (
+                "You are a helpful AI assistant for [HR Policy Assistant]. "  # TODO: replace with your domain
+                "Answer clearly and concisely. "
+                "If you don't know something, say so honestly rather than guessing."
+            ),
+           } 
+    {"role": "user", "content": request.message},
+    ]
     #        This is what the user just typed.
     #
     # 2. Call:  result = await call_llm(messages)
-    #
+    result = await call_llm(messages)
     # 3. Return: ChatResponse(response=result.content or "")
-    #
+    return ChatResponse(response=result.content or "")
     # See GLOSSARY.md for explanations of "system prompt", "LLM", and "token".
     pass
 

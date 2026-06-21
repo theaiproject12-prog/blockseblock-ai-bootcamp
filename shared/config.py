@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # Valid values: "groq" | "openai" | "anthropic" | "cohere" | "ollama"
     #               "azure" | "bedrock" | "vertex" | "custom"
     # groq is recommended for beginners — free tier, no credit card, very fast.
-    llm_provider: str = "groq"
+    llm_provider: str = "ollama # default to Ollama for local SLM (no API key needed)"
 
     # Optional: use a different provider for voice (STT/TTS) in Feature 10.
     # Defaults to llm_provider if not set.
