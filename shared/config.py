@@ -106,6 +106,45 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
 
     # -------------------------------------------------------------------------
+    # Feature 6: Smart Router feature flags
+    # -------------------------------------------------------------------------
+
+    # Enable PageIndex routing for professional document queries.
+    # Requires a tree index pre-built with run_pageindex.py.
+    # See github.com/VectifyAI/PageIndex for setup.
+    enable_pageindex: bool = False
+
+    # Enable multi-tenant isolation (Part B — enterprise extension).
+    # When True, every document/session/vector is scoped to a tenant_id
+    # derived from the X-Tenant-ID request header.
+    enable_multi_tenant: bool = False
+
+    # Enable long-term retrieval memory (Part C — enterprise extension).
+    # When True, retrieval events are logged and can be summarised into a
+    # KnowledgeDigest that is injected into the smart chat system prompt.
+    enable_long_term_context: bool = False
+
+    # -------------------------------------------------------------------------
+    # Bonus Module 0.5.1 (Part A): Secrets management
+    # -------------------------------------------------------------------------
+    # "env" = read from .env (default). "infisical" or "doppler" = vault.
+    # See shared/secrets.py for setup instructions.
+    secrets_provider: str = "env"
+
+    # Infisical machine identity (used when secrets_provider="infisical")
+    infisical_client_id: str = ""
+    infisical_client_secret: str = ""
+    infisical_project_id: str = ""
+    infisical_env: str = "dev"
+
+    # -------------------------------------------------------------------------
+    # Bonus Module 0.5.1 (Part B): Ollama local privacy hardening
+    # -------------------------------------------------------------------------
+    # When True, OllamaProvider logs startup warnings for -cloud models and
+    # plain-text history logging. See docs/ollama-privacy-guide.md.
+    enable_ollama_privacy_checks: bool = False
+
+    # -------------------------------------------------------------------------
     # Application
     # -------------------------------------------------------------------------
     app_port: int = 8000

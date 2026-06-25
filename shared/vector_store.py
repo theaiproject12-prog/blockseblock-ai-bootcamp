@@ -53,7 +53,12 @@ def get_collection() -> chromadb.Collection:
     return _client.get_or_create_collection(COLLECTION_NAME)
 
 
-def add_chunks(document_id: str, chunks: list[str], metadatas: list[dict]) -> None:
+def add_chunks(
+    document_id: str,
+    chunks: list[str],
+    metadatas: list[dict],
+    tenant_id: str = "default",
+) -> None:
     """
     Embed and store document chunks with metadata.
 
@@ -70,6 +75,8 @@ def add_chunks(document_id: str, chunks: list[str], metadatas: list[dict]) -> No
       chunks:      list of raw text strings to embed and index
       metadatas:   parallel list of metadata dicts (filename, chunk_index …)
                    None values are removed — Chroma does not support null metadata.
+      tenant_id:   tenant owner (Feature 6 Part B). Stored in metadata so
+                   search() can filter by it. Default "default" = single-tenant.
     """
     if not chunks:
         return
@@ -77,10 +84,11 @@ def add_chunks(document_id: str, chunks: list[str], metadatas: list[dict]) -> No
     collection = get_collection()
     ids = [f"{document_id}_{i}" for i in range(len(chunks))]
 
-    # Inject document_id into every metadata entry so we can filter/delete by it.
-    # Also strip None values — Chroma rejects them.
+    # Inject document_id and tenant_id into every metadata entry.
+    # Strip None values — Chroma rejects them.
     cleaned_metadatas = [
-        {k: v for k, v in {**m, "document_id": document_id}.items() if v is not None}
+        {k: v for k, v in {**m, "document_id": document_id, "tenant_id": tenant_id}.items()
+         if v is not None}
         for m in metadatas
     ]
 
@@ -91,6 +99,7 @@ def search(
     query: str,
     top_k: int = 5,
     filters: dict | None = None,
+    tenant_id: str | None = None,
 ) -> list[dict]:
     """
     Embed the query and return the top_k most similar chunks.
@@ -116,16 +125,23 @@ def search(
       with reasoning-based retrieval for domains where similarity falls short.
 
     Args:
-      query:   the user's question (embedded using the same model as the chunks)
-      top_k:   maximum results to return
-      filters: optional Chroma `where` clause for metadata filtering.
-               {"document_id": "abc"} → search within one document only.
+      query:     the user's question (embedded using the same model as the chunks)
+      top_k:     maximum results to return
+      filters:   optional Chroma `where` clause for metadata filtering.
+                 {"document_id": "abc"} → search within one document only.
+      tenant_id: when ENABLE_MULTI_TENANT=true, restricts results to this tenant.
+                 This is the CRITICAL enforcement point for tenant isolation.
+                 Filtering at the vector database query level (not application level)
+                 means cross-tenant chunks are never even retrieved — a bug cannot
+                 leak data because the chunks don't come back at all.
 
     Returns:
       list of result dicts sorted by score (highest first):
         {"text": str, "filename": str, "chunk_index": int,
          "score": float, "document_id": str}
     """
+    from shared.config import settings
+
     collection = get_collection()
     total = collection.count()
     if total == 0:
@@ -133,9 +149,17 @@ def search(
 
     n_results = min(top_k, total)
 
+    # Merge any caller-supplied filters with the tenant_id isolation filter.
+    # TODO (Feature 6, Part B): add where={"tenant_id": tenant_id} to this
+    # collection.query() call — without this line, tenant isolation does NOT
+    # work at the vector database level and is purely cosmetic (app-level).
+    effective_filters: dict = dict(filters) if filters else {}
+    if settings.enable_multi_tenant and tenant_id:
+        effective_filters["tenant_id"] = tenant_id
+
     kwargs: dict = {"query_texts": [query], "n_results": n_results}
-    if filters:
-        kwargs["where"] = filters
+    if effective_filters:
+        kwargs["where"] = effective_filters
 
     results = collection.query(**kwargs)
 

@@ -11,6 +11,13 @@ FRAMEWORK EQUIVALENTS:
 
 In Feature 11 (Docker/deploy) this can be swapped for a real database
 with no changes to any endpoint — only this file changes.
+
+MULTI-TENANCY (Feature 6, Part B):
+  All functions accept an optional tenant_id parameter (default "default").
+  When ENABLE_MULTI_TENANT=false (the default), tenant_id is ignored and
+  all existing Feature 4/5 behavior is unchanged.
+  When ENABLE_MULTI_TENANT=true, list_documents() and get_document() filter
+  by tenant_id — one tenant cannot see another's documents.
 """
 import uuid
 from datetime import datetime, timezone
@@ -21,7 +28,7 @@ _documents: dict[str, Document] = {}
 _chunks: dict[str, list[Chunk]] = {}  # keyed by document_id
 
 
-def save_document(filename: str) -> Document:
+def save_document(filename: str, tenant_id: str = "default") -> Document:
     """
     Create a new Document record (status='processing') and store it.
 
@@ -36,6 +43,7 @@ def save_document(filename: str) -> Document:
         status="processing",
         chunk_count=0,
         chunking_strategy="sentence",  # placeholder; updated by update_document
+        tenant_id=tenant_id,
     )
     _documents[doc.id] = doc
     return doc
@@ -59,14 +67,35 @@ def update_document(
     })
 
 
-def get_document(doc_id: str) -> Document | None:
-    """Return the Document for the given ID, or None if not found."""
-    return _documents.get(doc_id)
+def get_document(doc_id: str, tenant_id: str = "default") -> Document | None:
+    """Return the Document for the given ID, or None if not found.
+
+    When ENABLE_MULTI_TENANT=true, returns None if the document belongs
+    to a different tenant — preventing cross-tenant access even with a
+    known document ID.
+    """
+    from shared.config import settings
+
+    doc = _documents.get(doc_id)
+    if doc is None:
+        return None
+    if settings.enable_multi_tenant and doc.tenant_id != tenant_id:
+        return None
+    return doc
 
 
-def list_documents() -> list[Document]:
-    """Return all documents, most recently uploaded first."""
-    return sorted(_documents.values(), key=lambda d: d.uploaded_at, reverse=True)
+def list_documents(tenant_id: str = "default") -> list[Document]:
+    """Return all documents, most recently uploaded first.
+
+    When ENABLE_MULTI_TENANT=true, only returns documents belonging to
+    the given tenant. When disabled, returns all documents (existing behavior).
+    """
+    from shared.config import settings
+
+    docs = _documents.values()
+    if settings.enable_multi_tenant:
+        docs = (d for d in docs if d.tenant_id == tenant_id)
+    return sorted(docs, key=lambda d: d.uploaded_at, reverse=True)
 
 
 def save_chunk(chunk: Chunk) -> None:
@@ -81,13 +110,20 @@ def get_chunks(document_id: str) -> list[Chunk]:
     return sorted(_chunks.get(document_id, []), key=lambda c: c.chunk_index)
 
 
-def delete_document(doc_id: str) -> bool:
+def delete_document(doc_id: str, tenant_id: str = "default") -> bool:
     """
     Delete a document and all its chunks.
 
     Returns True if the document existed and was deleted, False if not found.
+    When ENABLE_MULTI_TENANT=true, returns False if the document belongs to
+    a different tenant — tenants cannot delete each other's documents.
     """
-    if doc_id not in _documents:
+    from shared.config import settings
+
+    doc = _documents.get(doc_id)
+    if doc is None:
+        return False
+    if settings.enable_multi_tenant and doc.tenant_id != tenant_id:
         return False
     del _documents[doc_id]
     _chunks.pop(doc_id, None)

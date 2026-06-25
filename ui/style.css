@@ -1057,3 +1057,322 @@ html, body {
   color: var(--color-carob);
   line-height: 1.5;
 }
+
+/* =============================================================================
+   Feature 6: Smart Router
+   ============================================================================= */
+
+/* Smart Mode toggle — identical markup to Structured Mode, no extra CSS needed */
+
+/* Source badges: llm / rag / hybrid / pageindex */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.65rem;
+  border-radius: 99px;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.source-badge[data-source="llm"] {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.source-badge[data-source="rag"] {
+  background: rgba(128,150,113,0.18);
+  color: var(--color-matcha);
+  border: 1px solid var(--color-matcha);
+}
+
+.source-badge[data-source="hybrid"] {
+  background: rgba(210,171,128,0.20);
+  color: #92600a;
+  border: 1px solid var(--color-chai);
+}
+
+.source-badge[data-source="pageindex"] {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+/* Smart response card */
+.smart-response-card {
+  background: white;
+  border: 1px solid var(--color-almond);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  max-width: 680px;
+  box-shadow: var(--shadow-sm);
+}
+
+.smart-response-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.65rem;
+  flex-wrap: wrap;
+}
+
+/* Collapsed chunk list toggle */
+.smart-chunks-toggle {
+  display: inline-block;
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--color-pistache);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.15rem 0;
+  text-decoration: underline dotted;
+}
+
+.smart-chunks-toggle:hover { color: var(--color-carob); }
+
+.smart-chunks-container {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.smart-chunk-item {
+  padding: 0.6rem 0.75rem;
+  background: var(--color-almond);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+}
+
+.smart-chunk-item .result-filename-badge,
+.smart-chunk-item .result-chunk-meta,
+.smart-chunk-item .result-score-badge {
+  margin-right: 0.4rem;
+}
+
+.smart-chunk-item .result-text {
+  margin-top: 0.35rem;
+}
+
+/* =============================================================================
+   Feature 6: Admin panel
+   ============================================================================= */
+
+/* Week 2 Complete banner */
+.week2-complete-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  background: linear-gradient(135deg, rgba(128,150,113,0.12), rgba(210,171,128,0.12));
+  border: 1.5px solid var(--color-matcha);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.1rem;
+  margin-bottom: 1.5rem;
+}
+
+.week2-complete-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.week2-complete-body strong {
+  display: block;
+  font-size: 1rem;
+  color: var(--color-carob);
+  margin-bottom: 0.35rem;
+}
+
+.week2-complete-body p {
+  font-size: 0.85rem;
+  color: var(--color-carob);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* Admin section layout */
+.admin-section {
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--color-almond);
+}
+
+.admin-section:last-child { border-bottom: none; }
+
+.admin-section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-carob);
+  margin-bottom: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.admin-part-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+  background: var(--color-vanilla);
+  border: 1px solid var(--color-pistache);
+  border-radius: 99px;
+  color: var(--color-pistache);
+  letter-spacing: 0.02em;
+}
+
+.admin-section-desc {
+  font-size: 0.82rem;
+  color: #777;
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+}
+
+.admin-section-desc code {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  background: var(--color-almond);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+/* Tenant switcher row */
+.admin-tenant-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.65rem;
+}
+
+.admin-input {
+  flex: 1;
+  min-width: 160px;
+  max-width: 280px;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--color-pistache);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  background: white;
+  color: var(--color-carob);
+}
+
+.admin-input:focus {
+  outline: 2px solid var(--color-matcha);
+  outline-offset: 1px;
+}
+
+.btn-ghost {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--color-pistache);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-carob);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-ghost:hover { background: var(--color-almond); }
+
+/* Admin info card (tenant info, digest) */
+.admin-info-card {
+  padding: 0.75rem 1rem;
+  background: var(--color-almond);
+  border-radius: var(--radius-sm);
+  font-size: 0.83rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--color-carob);
+}
+
+.admin-info-card code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+/* Digest controls */
+.admin-digest-controls {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+/* Knowledge Digest content */
+.digest-summary {
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--color-carob);
+  margin-bottom: 0.5rem;
+}
+
+.digest-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.digest-topic-tag {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.55rem;
+  background: rgba(128,150,113,0.15);
+  border: 1px solid var(--color-matcha);
+  border-radius: 99px;
+  color: var(--color-matcha);
+  font-weight: 600;
+}
+
+.digest-meta {
+  font-size: 0.72rem;
+  color: var(--color-pistache);
+}
+
+/* Retrieval log */
+.admin-retrievals-list {
+  margin-top: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.retrieval-log-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.45rem 0.7rem;
+  background: var(--color-almond);
+  border-radius: var(--radius-sm);
+  flex-wrap: wrap;
+}
+
+.retrieval-method-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 99px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.retrieval-query {
+  font-size: 0.83rem;
+  color: var(--color-carob);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.retrieval-meta {
+  font-size: 0.72rem;
+  color: var(--color-pistache);
+  white-space: nowrap;
+  flex-shrink: 0;
+}

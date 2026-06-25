@@ -70,6 +70,14 @@
           aria-selected="false"
           aria-controls="search-panel"
         >Ask My Documents</button>
+        <button
+          class="tab-btn"
+          role="tab"
+          id="tab-admin"
+          data-tab="admin"
+          aria-selected="false"
+          aria-controls="admin-panel"
+        >Admin</button>
       </nav>
 
       <!-- ===================================================
@@ -90,6 +98,19 @@
             <span class="toggle-text">Structured Mode</span>
             <span class="toggle-wrap">
               <input type="checkbox" id="structured-toggle" role="switch" aria-checked="false" />
+              <span class="toggle-track" aria-hidden="true"></span>
+            </span>
+          </label>
+
+          <!-- ===================================================
+               FEATURE 6: Smart Mode toggle
+               Routes messages through /api/sessions/{id}/chat/smart
+               which classifies the query before deciding to retrieve.
+               =================================================== -->
+          <label class="toggle-label" for="smart-toggle">
+            <span class="toggle-text">Smart Mode</span>
+            <span class="toggle-wrap">
+              <input type="checkbox" id="smart-toggle" role="switch" aria-checked="false" />
               <span class="toggle-track" aria-hidden="true"></span>
             </span>
           </label>
@@ -219,6 +240,76 @@
           A passage can be semantically close to your question without actually answering it.
           Coming in Feature 6: the Smart Router combines these passages with LLM generation
           to produce a synthesised answer, and decides when to skip retrieval entirely.
+        </div>
+      </section>
+
+      <!-- ===================================================
+           FEATURE 6: Admin panel
+           Part B: tenant identity + switcher
+           Part C: retrieval memory + knowledge digest
+           =================================================== -->
+      <section class="panel tab-panel" id="admin-panel" role="tabpanel" aria-labelledby="tab-admin" hidden>
+        <div class="panel-header-row">
+          <h2 class="panel-title">Admin</h2>
+        </div>
+
+        <!-- ── Week 2 Complete banner ── -->
+        <div class="week2-complete-callout">
+          <div class="week2-complete-icon" aria-hidden="true">🎓</div>
+          <div class="week2-complete-body">
+            <strong>Week 2 Complete — Full RAG Pipeline</strong>
+            <p>
+              You've built the complete pipeline: ingest (F4) → embed (F5) → route (F6).
+              The Smart Router now classifies queries before deciding to retrieve,
+              with optional multi-tenant isolation (Part B) and long-term retrieval
+              memory (Part C). Coming in Week 3: Tools, Voice, and production deployment.
+            </p>
+          </div>
+        </div>
+
+        <!-- ── Part B: Tenant identity ── -->
+        <div class="admin-section">
+          <h3 class="admin-section-title">Tenant Identity <span class="admin-part-badge">Part B</span></h3>
+          <p class="admin-section-desc">
+            Set the <code>X-Tenant-ID</code> header to switch between tenants.
+            Only active when <code>ENABLE_MULTI_TENANT=true</code> in your <code>.env</code>.
+          </p>
+          <div class="admin-tenant-row">
+            <input type="text" id="tenant-id-input" class="admin-input" placeholder="tenant-a" value="" />
+            <button id="tenant-apply-btn" class="btn btn-primary">Apply</button>
+            <button id="tenant-clear-btn" class="btn btn-ghost">Reset to default</button>
+          </div>
+          <div id="tenant-info-card" class="admin-info-card">
+            <span style="color:var(--color-pistache);font-size:0.82rem">Click Apply to check tenant info.</span>
+          </div>
+        </div>
+
+        <!-- ── Part C: Retrieval memory / Knowledge Digest ── -->
+        <div class="admin-section">
+          <h3 class="admin-section-title">Knowledge Digest <span class="admin-part-badge">Part C</span></h3>
+          <p class="admin-section-desc">
+            A 2-3 sentence LLM-generated summary of this tenant's retrieval history.
+            Once built, it's injected into the Smart Router's system prompt as persistent
+            cross-session context. Requires <code>ENABLE_LONG_TERM_CONTEXT=true</code>.
+          </p>
+          <div class="admin-digest-controls">
+            <button id="digest-rebuild-btn" class="btn btn-primary">Rebuild Digest</button>
+            <button id="digest-view-btn" class="btn btn-ghost">View Current</button>
+          </div>
+          <div id="digest-card" class="admin-info-card" hidden>
+            <!-- populated by JS -->
+          </div>
+        </div>
+
+        <!-- ── Retrieval log ── -->
+        <div class="admin-section">
+          <h3 class="admin-section-title">Recent Retrievals</h3>
+          <p class="admin-section-desc">
+            Queries that triggered document retrieval in this session.
+            This log is the raw material for the Knowledge Digest above.
+          </p>
+          <button id="retrievals-load-btn" class="btn btn-ghost">Load Recent Retrievals</button>
+          <div id="retrievals-list" class="admin-retrievals-list" hidden></div>
         </div>
       </section>
 

@@ -72,11 +72,15 @@ async function sendMessage() {
 
   const isStructured = structuredToggle?.checked ?? false;
 
-  // Feature 3: if a session is active, all messages go through the session endpoint
-  // (which always returns a StructuredResponse). Fall back to Feature 1/2 endpoints
-  // only when no session is active.
+  const isSmartMode = smartToggle?.checked ?? false;
+
+  // Feature 3: if a session is active, all messages go through the session endpoint.
+  // Feature 6: Smart Mode routes through /chat/smart which uses the Smart Router.
+  // Fall back to Feature 1/2 endpoints only when no session is active.
   let endpoint;
-  if (currentSessionId) {
+  if (currentSessionId && isSmartMode) {
+    endpoint = `/api/sessions/${currentSessionId}/chat/smart`;
+  } else if (currentSessionId) {
     endpoint = `/api/sessions/${currentSessionId}/chat`;
   } else if (isStructured) {
     endpoint = "/api/chat/structured";
@@ -84,10 +88,14 @@ async function sendMessage() {
     endpoint = "/api/chat";
   }
 
+  // Build headers — include X-Tenant-ID if a custom tenant is set.
+  const headers = { "Content-Type": "application/json" };
+  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
+
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ message: text }),
     });
 
@@ -99,8 +107,10 @@ async function sendMessage() {
     const data = await response.json();
     thinkingEl.remove();
 
-    // Session endpoint and structured mode both return StructuredResponse.
-    if (currentSessionId || isStructured) {
+    // Smart Mode returns SmartChatResponse; session/structured returns StructuredResponse.
+    if (currentSessionId && isSmartMode) {
+      appendSmartResponse(data);
+    } else if (currentSessionId || isStructured) {
       appendStructuredResponse(data);
     } else {
       appendMessage("ai", data.response ?? "(no response)");
@@ -228,6 +238,121 @@ function appendStructuredResponse(data) {
     hint.className = "sources-tag";
     hint.textContent = "⚠ This answer would improve with domain documents (added in Feature 4).";
     card.appendChild(hint);
+  }
+
+  wrapper.appendChild(label);
+  wrapper.appendChild(card);
+  messageHistory.appendChild(wrapper);
+  messageHistory.scrollTop = messageHistory.scrollHeight;
+}
+
+// =============================================================================
+// Feature 6: Smart Mode toggle + SmartChatResponse rendering
+// =============================================================================
+
+const smartToggle = document.getElementById("smart-toggle");
+
+smartToggle?.addEventListener("change", () => {
+  smartToggle.setAttribute("aria-checked", String(smartToggle.checked));
+  // Smart Mode requires a session — auto-create one if needed.
+  if (smartToggle.checked && !currentSessionId) {
+    createNewSession();
+  }
+});
+
+/**
+ * Source badge labels and colours for SmartChatResponse.
+ *   llm       — answered directly from the model's knowledge
+ *   rag       — retrieved from uploaded documents
+ *   hybrid    — retrieval attempted but confidence was low
+ *   pageindex — PageIndex tree navigation (optional, ENABLE_PAGEINDEX=true)
+ */
+const SOURCE_LABELS = {
+  llm:       "LLM (no retrieval)",
+  rag:       "RAG (document retrieval)",
+  hybrid:    "Hybrid (low-confidence retrieval)",
+  pageindex: "PageIndex (tree navigation)",
+};
+
+/**
+ * Render a SmartChatResponse as a visual card with source + confidence badges.
+ *
+ * @param {{ answer: string, source: string, chunks_used: object[], confidence: number, retrieval_method: string }} data
+ */
+function appendSmartResponse(data) {
+  document.getElementById("empty-state")?.remove();
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "message ai";
+
+  const label = document.createElement("span");
+  label.className = "role-label";
+  label.textContent = "Assistant";
+
+  const card = document.createElement("div");
+  card.className = "smart-response-card";
+
+  // ── Source + confidence header ──
+  const header = document.createElement("div");
+  header.className = "smart-response-header";
+
+  const sourceBadge = document.createElement("span");
+  sourceBadge.className = "source-badge";
+  sourceBadge.dataset.source = data.source ?? "llm";
+  sourceBadge.textContent = SOURCE_LABELS[data.source] ?? data.source ?? "llm";
+  header.appendChild(sourceBadge);
+
+  const pct = Math.round((data.confidence ?? 0) * 100);
+  const level = pct >= 70 ? "high" : pct >= 40 ? "medium" : "low";
+  const confWrap = document.createElement("div");
+  confWrap.className = "confidence-wrap";
+  confWrap.innerHTML = `
+    <span class="confidence-label">Router confidence</span>
+    <div class="confidence-bar-track">
+      <div class="confidence-bar-fill" data-level="${level}" style="width:${pct}%"></div>
+    </div>
+    <span class="confidence-pct">${pct}%</span>
+  `;
+  header.appendChild(confWrap);
+  card.appendChild(header);
+
+  // ── Answer text ──
+  const answer = document.createElement("p");
+  answer.className = "response-card-answer";
+  answer.textContent = data.answer ?? "";
+  card.appendChild(answer);
+
+  // ── Retrieved chunks (collapsed by default) ──
+  if (data.chunks_used?.length) {
+    const chunksToggle = document.createElement("button");
+    chunksToggle.className = "smart-chunks-toggle";
+    chunksToggle.textContent = `▶ ${data.chunks_used.length} chunk${data.chunks_used.length !== 1 ? "s" : ""} retrieved`;
+    card.appendChild(chunksToggle);
+
+    const chunksContainer = document.createElement("div");
+    chunksContainer.className = "smart-chunks-container";
+    chunksContainer.hidden = true;
+
+    data.chunks_used.forEach((chunk, i) => {
+      const chunkEl = document.createElement("div");
+      chunkEl.className = "smart-chunk-item";
+      const chunkPct = Math.round((chunk.score ?? 0) * 100);
+      const chunkLevel = chunkPct >= 60 ? "high" : chunkPct >= 35 ? "medium" : "low";
+      chunkEl.innerHTML = `
+        <span class="result-filename-badge">${escapeHtml(chunk.filename || "unknown")}</span>
+        <span class="result-chunk-meta">chunk ${chunk.chunk_index ?? i}</span>
+        <span class="result-score-badge" data-level="${chunkLevel}">${chunkPct}%</span>
+        <p class="result-text">${escapeHtml((chunk.text || "").slice(0, 200))}${(chunk.text || "").length > 200 ? "…" : ""}</p>
+      `;
+      chunksContainer.appendChild(chunkEl);
+    });
+    card.appendChild(chunksContainer);
+
+    chunksToggle.addEventListener("click", () => {
+      const hidden = chunksContainer.hidden;
+      chunksContainer.hidden = !hidden;
+      chunksToggle.textContent = `${hidden ? "▼" : "▶"} ${data.chunks_used.length} chunk${data.chunks_used.length !== 1 ? "s" : ""} retrieved`;
+    });
   }
 
   wrapper.appendChild(label);
@@ -398,6 +523,8 @@ function switchTab(tabName) {
   if (tabName === "documents") loadDocuments();
   // Refresh search document filter whenever the Search tab is opened.
   if (tabName === "search") loadSearchDocumentFilter();
+  // Load tenant info whenever the Admin tab is opened (Feature 6).
+  if (tabName === "admin") loadTenantInfo();
 }
 
 tabButtons.forEach((btn) => {
@@ -745,3 +872,153 @@ searchBtn?.addEventListener("click", runSearch);
 searchInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); runSearch(); }
 });
+
+// =============================================================================
+// Feature 6: Admin panel — tenant switcher + Knowledge Digest (Parts B & C)
+// =============================================================================
+
+/** The active X-Tenant-ID header value. Empty string = no custom tenant. */
+let activeTenantId = "";
+
+const tenantIdInput     = document.getElementById("tenant-id-input");
+const tenantApplyBtn    = document.getElementById("tenant-apply-btn");
+const tenantClearBtn    = document.getElementById("tenant-clear-btn");
+const tenantInfoCard    = document.getElementById("tenant-info-card");
+const digestRebuildBtn  = document.getElementById("digest-rebuild-btn");
+const digestViewBtn     = document.getElementById("digest-view-btn");
+const digestCard        = document.getElementById("digest-card");
+const retrievalsLoadBtn = document.getElementById("retrievals-load-btn");
+const retrievalsList    = document.getElementById("retrievals-list");
+
+/** Fetch /api/tenant/info and display the result card. */
+async function loadTenantInfo() {
+  if (!tenantInfoCard) return;
+
+  const headers = {};
+  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/tenant/info`, { headers });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const info = await res.json();
+    tenantInfoCard.innerHTML = `
+      <span>Tenant ID: <code>${escapeHtml(info.tenant_id)}</code></span>
+      <span>Multi-tenant mode: <span class="badge">${info.multi_tenant_enabled ? "enabled" : "disabled"}</span></span>
+      <span>Documents visible: <strong>${info.document_count}</strong></span>
+    `;
+    tenantInfoCard.removeAttribute("hidden");
+  } catch (err) {
+    tenantInfoCard.innerHTML = `<span style="color:var(--color-pistache);font-size:0.82rem">
+      Tenant info unavailable (requires Feature 6 server): ${escapeHtml(err.message)}
+    </span>`;
+    tenantInfoCard.removeAttribute("hidden");
+  }
+}
+
+tenantApplyBtn?.addEventListener("click", () => {
+  activeTenantId = tenantIdInput?.value.trim() ?? "";
+  loadTenantInfo();
+});
+
+tenantClearBtn?.addEventListener("click", () => {
+  activeTenantId = "";
+  if (tenantIdInput) tenantIdInput.value = "";
+  loadTenantInfo();
+});
+
+/** Render a Knowledge Digest response into digestCard. */
+function renderDigestCard(data) {
+  if (!digestCard) return;
+
+  if (data.message) {
+    digestCard.innerHTML = `<p style="color:var(--color-pistache);font-size:0.82rem">${escapeHtml(data.message)}</p>`;
+  } else {
+    const topicsHtml = (data.topics_covered ?? [])
+      .map((t) => `<span class="digest-topic-tag">${escapeHtml(t)}</span>`)
+      .join("");
+    digestCard.innerHTML = `
+      <p class="digest-summary">${escapeHtml(data.summary ?? "")}</p>
+      <div class="digest-topics">${topicsHtml}</div>
+      <span class="digest-meta">
+        Covers ${data.source_session_count ?? 0} session(s) ·
+        Updated ${data.last_updated ? new Date(data.last_updated).toLocaleString() : "—"}
+      </span>
+    `;
+  }
+  digestCard.removeAttribute("hidden");
+}
+
+digestRebuildBtn?.addEventListener("click", async () => {
+  if (!digestCard) return;
+  digestCard.innerHTML = `<span style="color:var(--color-pistache);font-size:0.82rem">Rebuilding digest…</span>`;
+  digestCard.removeAttribute("hidden");
+
+  const headers = { "Content-Type": "application/json" };
+  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/retrieval-memory/rebuild`, { method: "POST", headers });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const data = await res.json();
+    renderDigestCard(data);
+  } catch (err) {
+    digestCard.innerHTML = `<p style="color:var(--color-pistache);font-size:0.82rem">
+      Rebuild failed: ${escapeHtml(err.message)}
+    </p>`;
+  }
+});
+
+digestViewBtn?.addEventListener("click", async () => {
+  const headers = {};
+  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/retrieval-memory/digest`, { headers });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const data = await res.json();
+    renderDigestCard(data);
+  } catch (err) {
+    if (digestCard) {
+      digestCard.innerHTML = `<p style="color:var(--color-pistache);font-size:0.82rem">
+        Failed: ${escapeHtml(err.message)}
+      </p>`;
+      digestCard.removeAttribute("hidden");
+    }
+  }
+});
+
+retrievalsLoadBtn?.addEventListener("click", async () => {
+  if (!retrievalsList) return;
+
+  const headers = {};
+  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/retrieval-memory/recent?limit=10`, { headers });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const entries = await res.json();
+
+    if (!entries.length) {
+      retrievalsList.innerHTML = `<p class="sidebar-empty" style="font-size:0.82rem">No retrieval events yet. Use Smart Mode to trigger retrieval.</p>`;
+    } else {
+      retrievalsList.innerHTML = "";
+      entries.forEach((e) => {
+        const item = document.createElement("div");
+        item.className = "retrieval-log-item";
+        item.innerHTML = `
+          <span class="retrieval-method-tag">${escapeHtml(e.retrieval_method)}</span>
+          <span class="retrieval-query">${escapeHtml(e.query)}</span>
+          <span class="retrieval-meta">${e.chunks_retrieved?.length ?? 0} chunks · ${new Date(e.timestamp).toLocaleTimeString()}</span>
+        `;
+        retrievalsList.appendChild(item);
+      });
+    }
+    retrievalsList.removeAttribute("hidden");
+  } catch (err) {
+    retrievalsList.innerHTML = `<p style="color:var(--color-pistache);font-size:0.82rem">
+      Failed: ${escapeHtml(err.message)} (requires Feature 6 server)
+    </p>`;
+    retrievalsList.removeAttribute("hidden");
+  }
+});
+
