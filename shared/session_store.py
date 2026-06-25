@@ -28,30 +28,44 @@ from shared.models import Message, Session
 _store: dict[str, Session] = {}
 
 
-def create_session() -> str:
+def create_session(tenant_id: str = "default") -> str:
     """
     Create a new empty session and return its ID.
 
     Each session gets a random UUID so IDs are collision-free without a
     database sequence. The created_at timestamp is recorded in UTC.
+
+    The tenant_id is stored on the session so that list_sessions() can filter
+    by tenant when ENABLE_MULTI_TENANT=true (Feature 6, Part B).
     """
     session_id = str(uuid.uuid4())
     _store[session_id] = Session(
         id=session_id,
         created_at=datetime.now(tz=timezone.utc),
         messages=[],
+        tenant_id=tenant_id,
     )
     return session_id
 
 
-def get_session(session_id: str) -> Optional[Session]:
+def get_session(session_id: str, tenant_id: str = "default") -> Optional[Session]:
     """
     Return the session with the given ID, or None if it doesn't exist.
 
     Callers should always check for None — a missing session should result in
     a 404 HTTP response, not a KeyError crash.
+
+    When ENABLE_MULTI_TENANT=true, returns None if the session belongs to a
+    different tenant — preventing cross-tenant session access.
     """
-    return _store.get(session_id)
+    from shared.config import settings
+
+    session = _store.get(session_id)
+    if session is None:
+        return None
+    if settings.enable_multi_tenant and session.tenant_id != tenant_id:
+        return None
+    return session
 
 
 def add_message(session_id: str, role: str, content: str) -> None:

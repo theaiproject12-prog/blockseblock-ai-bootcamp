@@ -105,6 +105,35 @@ feature-N-title/
 
 ---
 
+## 🔐 Secrets Management (Bonus Module 0.5.1 — Part A)
+
+> **Not required for any feature.** For students building toward real deployment
+> or working with sensitive data.
+
+Storing API keys in `.env` is the minimum viable approach — fine for learning,
+risky for anything real. In 2025, millions of credentials were leaked from GitHub;
+every one started with a key in a file that got committed.
+
+This bootcamp includes an optional secrets vault integration in `shared/secrets.py`.
+Set `SECRETS_PROVIDER` in your `.env` to switch:
+
+| Provider | How it works |
+|----------|-------------|
+| `env` | Default — reads from `.env` file, no changes needed |
+| `infisical` | Reads from [Infisical](https://app.infisical.com) vault (free individual plan). Keys stored in encrypted vault, never in files. |
+| `doppler` | Reads via Doppler CLI injection — run `doppler run -- uvicorn main:app` |
+
+**Machine identity ≠ API keys:** Infisical's `INFISICAL_CLIENT_ID` and
+`INFISICAL_CLIENT_SECRET` are scoped machine credentials, not your actual API keys.
+They can be rotated independently and are safe to store in `.env`.
+
+**Verify your setup:**
+```bash
+python -c "from shared.secrets import get_secret; print(get_secret('OPENAI_API_KEY')[:4] + '...')"
+```
+
+---
+
 ## Reference
 
 | Document | Purpose |
@@ -114,3 +143,4 @@ feature-N-title/
 | [docs/domain-picker.md](docs/domain-picker.md) | Choose and customize your project domain |
 | [docs/student-projects.md](docs/student-projects.md) | See what other students built |
 | [docs/architecture/](docs/architecture/) | System diagrams added week by week |
+| [docs/ollama-privacy-guide.md](docs/ollama-privacy-guide.md) | Verify local inference, disable history, air-gapped deployment |

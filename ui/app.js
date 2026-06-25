@@ -72,11 +72,15 @@ async function sendMessage() {
 
   const isStructured = structuredToggle?.checked ?? false;
 
-  // Feature 3: if a session is active, all messages go through the session endpoint
-  // (which always returns a StructuredResponse). Fall back to Feature 1/2 endpoints
-  // only when no session is active.
+  const isSmartMode = smartToggle?.checked ?? false;
+
+  // Feature 3: if a session is active, all messages go through the session endpoint.
+  // Feature 6: Smart Mode routes through /chat/smart which uses the Smart Router.
+  // Fall back to Feature 1/2 endpoints only when no session is active.
   let endpoint;
-  if (currentSessionId) {
+  if (currentSessionId && isSmartMode) {
+    endpoint = `/api/sessions/${currentSessionId}/chat/smart`;
+  } else if (currentSessionId) {
     endpoint = `/api/sessions/${currentSessionId}/chat`;
   } else if (isStructured) {
     endpoint = "/api/chat/structured";
@@ -84,10 +88,14 @@ async function sendMessage() {
     endpoint = "/api/chat";
   }
 
+  // Build headers — include X-Tenant-ID if a custom tenant is set.
+  const headers = { "Content-Type": "application/json" };
+  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
+
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ message: text }),
     });
 
@@ -99,8 +107,10 @@ async function sendMessage() {
     const data = await response.json();
     thinkingEl.remove();
 
-    // Session endpoint and structured mode both return StructuredResponse.
-    if (currentSessionId || isStructured) {
+    // Smart Mode returns SmartChatResponse; session/structured returns StructuredResponse.
+    if (currentSessionId && isSmartMode) {
+      appendSmartResponse(data);
+    } else if (currentSessionId || isStructured) {
       appendStructuredResponse(data);
     } else {
       appendMessage("ai", data.response ?? "(no response)");
@@ -228,6 +238,121 @@ function appendStructuredResponse(data) {
     hint.className = "sources-tag";
     hint.textContent = "⚠ This answer would improve with domain documents (added in Feature 4).";
     card.appendChild(hint);
+  }
+
+  wrapper.appendChild(label);
+  wrapper.appendChild(card);
+  messageHistory.appendChild(wrapper);
+  messageHistory.scrollTop = messageHistory.scrollHeight;
+}
+
+// =============================================================================
+// Feature 6: Smart Mode toggle + SmartChatResponse rendering
+// =============================================================================
+
+const smartToggle = document.getElementById("smart-toggle");
+
+smartToggle?.addEventListener("change", () => {
+  smartToggle.setAttribute("aria-checked", String(smartToggle.checked));
+  // Smart Mode requires a session — auto-create one if needed.
+  if (smartToggle.checked && !currentSessionId) {
+    createNewSession();
+  }
+});
+
+/**
+ * Source badge labels and colours for SmartChatResponse.
+ *   llm       — answered directly from the model's knowledge
+ *   rag       — retrieved from uploaded documents
+ *   hybrid    — retrieval attempted but confidence was low
+ *   pageindex — PageIndex tree navigation (optional, ENABLE_PAGEINDEX=true)
+ */
+const SOURCE_LABELS = {
+  llm:       "LLM (no retrieval)",
+  rag:       "RAG (document retrieval)",
+  hybrid:    "Hybrid (low-confidence retrieval)",
+  pageindex: "PageIndex (tree navigation)",
+};
+
+/**
+ * Render a SmartChatResponse as a visual card with source + confidence badges.
+ *
+ * @param {{ answer: string, source: string, chunks_used: object[], confidence: number, retrieval_method: string }} data
+ */
+function appendSmartResponse(data) {
+  document.getElementById("empty-state")?.remove();
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "message ai";
+
+  const label = document.createElement("span");
+  label.className = "role-label";
+  label.textContent = "Assistant";
+
+  const card = document.createElement("div");
+  card.className = "smart-response-card";
+
+  // ── Source + confidence header ──
+  const header = document.createElement("div");
+  header.className = "smart-response-header";
+
+  const sourceBadge = document.createElement("span");
+  sourceBadge.className = "source-badge";
+  sourceBadge.dataset.source = data.source ?? "llm";
+  sourceBadge.textContent = SOURCE_LABELS[data.source] ?? data.source ?? "llm";
+  header.appendChild(sourceBadge);
+
+  const pct = Math.round((data.confidence ?? 0) * 100);
+  const level = pct >= 70 ? "high" : pct >= 40 ? "medium" : "low";
+  const confWrap = document.createElement("div");
+  confWrap.className = "confidence-wrap";
+  confWrap.innerHTML = `
+    <span class="confidence-label">Router confidence</span>
+    <div class="confidence-bar-track">
+      <div class="confidence-bar-fill" data-level="${level}" style="width:${pct}%"></div>
+    </div>
+    <span class="confidence-pct">${pct}%</span>
+  `;
+  header.appendChild(confWrap);
+  card.appendChild(header);
+
+  // ── Answer text ──
+  const answer = document.createElement("p");
+  answer.className = "response-card-answer";
+  answer.textContent = data.answer ?? "";
+  card.appendChild(answer);
+
+  // ── Retrieved chunks (collapsed by default) ──
+  if (data.chunks_used?.length) {
+    const chunksToggle = document.createElement("button");
+    chunksToggle.className = "smart-chunks-toggle";
+    chunksToggle.textContent = `▶ ${data.chunks_used.length} chunk${data.chunks_used.length !== 1 ? "s" : ""} retrieved`;
+    card.appendChild(chunksToggle);
+
+    const chunksContainer = document.createElement("div");
+    chunksContainer.className = "smart-chunks-container";
+    chunksContainer.hidden = true;
+
+    data.chunks_used.forEach((chunk, i) => {
+      const chunkEl = document.createElement("div");
+      chunkEl.className = "smart-chunk-item";
+      const chunkPct = Math.round((chunk.score ?? 0) * 100);
+      const chunkLevel = chunkPct >= 60 ? "high" : chunkPct >= 35 ? "medium" : "low";
+      chunkEl.innerHTML = `
+        <span class="result-filename-badge">${escapeHtml(chunk.filename || "unknown")}</span>
+        <span class="result-chunk-meta">chunk ${chunk.chunk_index ?? i}</span>
+        <span class="result-score-badge" data-level="${chunkLevel}">${chunkPct}%</span>
+        <p class="result-text">${escapeHtml((chunk.text || "").slice(0, 200))}${(chunk.text || "").length > 200 ? "…" : ""}</p>
+      `;
+      chunksContainer.appendChild(chunkEl);
+    });
+    card.appendChild(chunksContainer);
+
+    chunksToggle.addEventListener("click", () => {
+      const hidden = chunksContainer.hidden;
+      chunksContainer.hidden = !hidden;
+      chunksToggle.textContent = `${hidden ? "▼" : "▶"} ${data.chunks_used.length} chunk${data.chunks_used.length !== 1 ? "s" : ""} retrieved`;
+    });
   }
 
   wrapper.appendChild(label);
@@ -372,6 +497,528 @@ newChatBtn?.addEventListener("click", createNewSession);
 loadSessions();
 
 // =============================================================================
-// Future features will add their JS sections below this line.
-// Each section should be clearly commented with the feature name and number.
+// Feature 4: Tab navigation (Chat | Documents)
 // =============================================================================
+
+const tabButtons = document.querySelectorAll(".tab-btn");
+const tabPanels  = document.querySelectorAll(".tab-panel");
+
+/**
+ * Switch the visible tab panel.
+ * @param {string} tabName - the data-tab value: "chat" or "documents"
+ */
+function switchTab(tabName) {
+  tabButtons.forEach((btn) => {
+    const active = btn.dataset.tab === tabName;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", String(active));
+  });
+
+  tabPanels.forEach((panel) => {
+    const show = panel.id === `${tabName}-panel`;
+    panel.toggleAttribute("hidden", !show);
+  });
+
+  // Refresh document list whenever the Documents tab is opened.
+  if (tabName === "documents") loadDocuments();
+  // Refresh search document filter whenever the Search tab is opened.
+  if (tabName === "search") loadSearchDocumentFilter();
+  // Load tenant info whenever the Admin tab is opened (Feature 6).
+  if (tabName === "admin") loadTenantInfo();
+}
+
+tabButtons.forEach((btn) => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+});
+
+// =============================================================================
+// Feature 4: Document ingestion
+// =============================================================================
+
+const uploadArea        = document.getElementById("upload-area");
+const fileInput         = document.getElementById("file-input");
+const uploadLabel       = document.getElementById("upload-label");
+const uploadProgress    = document.getElementById("upload-progress");
+const uploadProgressText = document.getElementById("upload-progress-text");
+const documentList      = document.getElementById("document-list");
+const strategySelect    = document.getElementById("strategy-select");
+
+/** Upload a File object to POST /api/documents/upload with the selected strategy. */
+async function uploadFile(file) {
+  const strategy = strategySelect?.value ?? "sentence";
+
+  // Show spinner, hide label.
+  if (uploadLabel)    uploadLabel.hidden = true;
+  if (uploadProgress) uploadProgress.hidden = false;
+  if (uploadProgressText) uploadProgressText.textContent = `Uploading "${file.name}" (${strategy})…`;
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("strategy", strategy);
+
+  try {
+    const res = await fetch(`${API_BASE}/api/documents/upload`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error ${res.status}`);
+    }
+
+    await loadDocuments();
+  } catch (err) {
+    alert(`Upload failed: ${err.message}`);
+  } finally {
+    if (uploadLabel)    uploadLabel.hidden = false;
+    if (uploadProgress) uploadProgress.hidden = true;
+    if (fileInput)      fileInput.value = "";
+  }
+}
+
+/** Fetch /api/documents and render the document list. */
+async function loadDocuments() {
+  if (!documentList) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/documents`);
+    if (!res.ok) throw new Error("documents endpoint not available");
+
+    const docs = await res.json();
+
+    if (!docs.length) {
+      documentList.innerHTML = `<p class="sidebar-empty">No documents uploaded yet. Upload a file above to get started.</p>`;
+      return;
+    }
+
+    documentList.innerHTML = "";
+    docs.forEach((doc) => {
+      documentList.appendChild(buildDocumentCard(doc));
+    });
+  } catch (err) {
+    documentList.innerHTML = `<p class="sidebar-empty" style="color:var(--color-pistache);font-size:0.82rem">
+      Document list requires the Feature 4 server.<br>${escapeHtml(err.message)}
+    </p>`;
+  }
+}
+
+/**
+ * Build a document card DOM element.
+ * Clicking the header toggles the chunk list (lazy-loaded).
+ */
+function buildDocumentCard(doc) {
+  const card = document.createElement("div");
+  card.className = "document-card";
+  card.dataset.docId = doc.id;
+
+  const header = document.createElement("div");
+  header.className = "document-card-header";
+  header.setAttribute("role", "button");
+  header.setAttribute("aria-expanded", "false");
+  header.tabIndex = 0;
+
+  const title = document.createElement("span");
+  title.className = "document-card-title";
+  title.textContent = doc.filename;
+  title.title = doc.filename;
+
+  const badge = document.createElement("span");
+  badge.className = "status-badge";
+  badge.dataset.status = doc.status;
+  badge.textContent = doc.status;
+
+  // Strategy tag
+  const stratTag = document.createElement("span");
+  stratTag.className = "strategy-tag";
+  stratTag.textContent = doc.chunking_strategy ?? "sentence";
+
+  const meta = document.createElement("span");
+  meta.className = "document-card-meta";
+  meta.textContent = doc.status === "ready"
+    ? `${doc.chunk_count} chunks · ${doc.chunk_count} vectors indexed`
+    : "";
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.className = "btn-delete";
+  deleteBtn.textContent = "Delete";
+  deleteBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    deleteDocumentById(doc.id);
+  });
+
+  header.appendChild(title);
+  header.appendChild(badge);
+  header.appendChild(stratTag);
+  header.appendChild(meta);
+  header.appendChild(deleteBtn);
+  card.appendChild(header);
+
+  // Clicking header expands/collapses chunks.
+  let chunksLoaded = false;
+  const chunkContainer = document.createElement("div");
+  chunkContainer.className = "chunk-list";
+  chunkContainer.hidden = true;
+  card.appendChild(chunkContainer);
+
+  async function toggleChunks() {
+    const expanded = header.getAttribute("aria-expanded") === "true";
+    header.setAttribute("aria-expanded", String(!expanded));
+    chunkContainer.hidden = expanded;
+
+    if (!expanded && !chunksLoaded) {
+      chunksLoaded = true;
+      chunkContainer.innerHTML = `<div class="chunk-item"><span class="chunk-preview" style="color:var(--color-pistache)">Loading chunks…</span></div>`;
+      try {
+        const res = await fetch(`${API_BASE}/api/documents/${doc.id}/chunks`);
+        const chunks = await res.json();
+        if (!chunks.length) {
+          chunkContainer.innerHTML = `<div class="chunk-item"><span class="chunk-preview">No chunks found.</span></div>`;
+          return;
+        }
+        chunkContainer.innerHTML = "";
+        chunks.forEach((c) => {
+          const pageNum = c.metadata?.page_number;
+          const pageSuffix = pageNum != null ? ` · p${pageNum}` : "";
+          const item = document.createElement("div");
+          item.className = "chunk-item";
+          item.innerHTML = `
+            <span class="chunk-index">${c.chunk_index}${escapeHtml(pageSuffix)}</span>
+            <span class="chunk-preview">${escapeHtml((c.text || "").slice(0, 120))}${c.text && c.text.length > 120 ? "…" : ""}</span>
+          `;
+          chunkContainer.appendChild(item);
+        });
+      } catch {
+        chunkContainer.innerHTML = `<div class="chunk-item"><span class="chunk-preview" style="color:var(--color-pistache)">Could not load chunks.</span></div>`;
+      }
+    }
+  }
+
+  header.addEventListener("click", toggleChunks);
+  header.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleChunks(); }
+  });
+
+  return card;
+}
+
+/** Delete a document by ID, then refresh the list. */
+async function deleteDocumentById(docId) {
+  if (!confirm("Delete this document and all its chunks?")) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/documents/${docId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error ${res.status}`);
+    }
+    await loadDocuments();
+  } catch (err) {
+    alert(`Delete failed: ${err.message}`);
+  }
+}
+
+// ── File input handler ──
+fileInput?.addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (file) uploadFile(file);
+});
+
+// ── Drag-and-drop ──
+uploadArea?.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  uploadArea.classList.add("drag-over");
+});
+
+uploadArea?.addEventListener("dragleave", () => {
+  uploadArea.classList.remove("drag-over");
+});
+
+uploadArea?.addEventListener("drop", (e) => {
+  e.preventDefault();
+  uploadArea.classList.remove("drag-over");
+  const file = e.dataTransfer?.files?.[0];
+  if (file) uploadFile(file);
+});
+
+// =============================================================================
+// Feature 5: Semantic search (Ask My Documents)
+// =============================================================================
+
+const searchInput     = document.getElementById("search-input");
+const searchBtn       = document.getElementById("search-btn");
+const searchDocFilter = document.getElementById("search-doc-filter");
+const searchResults   = document.getElementById("search-results");
+
+/** Populate the document filter dropdown from GET /api/documents. */
+async function loadSearchDocumentFilter() {
+  if (!searchDocFilter) return;
+
+  // Keep "All documents" option and rebuild the rest.
+  searchDocFilter.innerHTML = `<option value="">All documents</option>`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/documents`);
+    if (!res.ok) return;
+    const docs = await res.json();
+    docs.filter((d) => d.status === "ready").forEach((d) => {
+      const opt = document.createElement("option");
+      opt.value = d.id;
+      opt.textContent = d.filename;
+      searchDocFilter.appendChild(opt);
+    });
+  } catch {
+    // Search still works without the filter populated.
+  }
+}
+
+/**
+ * Run a semantic search and render results.
+ * Scores >= 0.6 get a Matcha (high) border, >= 0.35 get Chai (medium), else gray (low).
+ */
+async function runSearch() {
+  const query = searchInput?.value.trim();
+  if (!query) return;
+
+  if (searchResults) {
+    searchResults.innerHTML = `
+      <div class="search-thinking">
+        <span class="upload-spinner" aria-hidden="true"></span>
+        <span>Searching…</span>
+      </div>`;
+  }
+  if (searchBtn) searchBtn.disabled = true;
+
+  const documentId = searchDocFilter?.value || null;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, top_k: 5, document_id: documentId }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error ${res.status}`);
+    }
+
+    const results = await res.json();
+
+    if (!results.length) {
+      searchResults.innerHTML = `<p class="sidebar-empty">No matching chunks found. Upload a document first, or try a different question.</p>`;
+      return;
+    }
+
+    searchResults.innerHTML = "";
+    results.forEach((r) => {
+      searchResults.appendChild(buildResultCard(r));
+    });
+  } catch (err) {
+    if (searchResults) {
+      searchResults.innerHTML = `<p class="sidebar-empty" style="color:var(--color-pistache)">
+        Search failed: ${escapeHtml(err.message)}
+      </p>`;
+    }
+  } finally {
+    if (searchBtn) searchBtn.disabled = false;
+  }
+}
+
+/**
+ * Build a search result card DOM element.
+ * @param {{ text: string, filename: string, chunk_index: number, score: number, document_id: string }} result
+ */
+function buildResultCard(result) {
+  const pct = Math.round(result.score * 100);
+  const level = pct >= 60 ? "high" : pct >= 35 ? "medium" : "low";
+
+  const card = document.createElement("div");
+  card.className = "search-result-card";
+  card.dataset.scoreLevel = level;
+
+  const header = document.createElement("div");
+  header.className = "result-card-header";
+
+  const filenameBadge = document.createElement("span");
+  filenameBadge.className = "result-filename-badge";
+  filenameBadge.textContent = result.filename || "Unknown source";
+
+  const chunkMeta = document.createElement("span");
+  chunkMeta.className = "result-chunk-meta";
+  chunkMeta.textContent = `chunk ${result.chunk_index}`;
+
+  const scoreBadge = document.createElement("span");
+  scoreBadge.className = "result-score-badge";
+  scoreBadge.dataset.level = level;
+  scoreBadge.textContent = `${pct}%`;
+  scoreBadge.title = "Similarity score (higher = more similar, not necessarily more relevant)";
+
+  header.appendChild(filenameBadge);
+  header.appendChild(chunkMeta);
+  header.appendChild(scoreBadge);
+
+  const text = document.createElement("p");
+  text.className = "result-text";
+  text.textContent = result.text || "";
+
+  card.appendChild(header);
+  card.appendChild(text);
+
+  return card;
+}
+
+searchBtn?.addEventListener("click", runSearch);
+searchInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); runSearch(); }
+});
+
+// =============================================================================
+// Feature 6: Admin panel — tenant switcher + Knowledge Digest (Parts B & C)
+// =============================================================================
+
+/** The active X-Tenant-ID header value. Empty string = no custom tenant. */
+let activeTenantId = "";
+
+const tenantIdInput     = document.getElementById("tenant-id-input");
+const tenantApplyBtn    = document.getElementById("tenant-apply-btn");
+const tenantClearBtn    = document.getElementById("tenant-clear-btn");
+const tenantInfoCard    = document.getElementById("tenant-info-card");
+const digestRebuildBtn  = document.getElementById("digest-rebuild-btn");
+const digestViewBtn     = document.getElementById("digest-view-btn");
+const digestCard        = document.getElementById("digest-card");
+const retrievalsLoadBtn = document.getElementById("retrievals-load-btn");
+const retrievalsList    = document.getElementById("retrievals-list");
+
+/** Fetch /api/tenant/info and display the result card. */
+async function loadTenantInfo() {
+  if (!tenantInfoCard) return;
+
+  const headers = {};
+  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/tenant/info`, { headers });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const info = await res.json();
+    tenantInfoCard.innerHTML = `
+      <span>Tenant ID: <code>${escapeHtml(info.tenant_id)}</code></span>
+      <span>Multi-tenant mode: <span class="badge">${info.multi_tenant_enabled ? "enabled" : "disabled"}</span></span>
+      <span>Documents visible: <strong>${info.document_count}</strong></span>
+    `;
+    tenantInfoCard.removeAttribute("hidden");
+  } catch (err) {
+    tenantInfoCard.innerHTML = `<span style="color:var(--color-pistache);font-size:0.82rem">
+      Tenant info unavailable (requires Feature 6 server): ${escapeHtml(err.message)}
+    </span>`;
+    tenantInfoCard.removeAttribute("hidden");
+  }
+}
+
+tenantApplyBtn?.addEventListener("click", () => {
+  activeTenantId = tenantIdInput?.value.trim() ?? "";
+  loadTenantInfo();
+});
+
+tenantClearBtn?.addEventListener("click", () => {
+  activeTenantId = "";
+  if (tenantIdInput) tenantIdInput.value = "";
+  loadTenantInfo();
+});
+
+/** Render a Knowledge Digest response into digestCard. */
+function renderDigestCard(data) {
+  if (!digestCard) return;
+
+  if (data.message) {
+    digestCard.innerHTML = `<p style="color:var(--color-pistache);font-size:0.82rem">${escapeHtml(data.message)}</p>`;
+  } else {
+    const topicsHtml = (data.topics_covered ?? [])
+      .map((t) => `<span class="digest-topic-tag">${escapeHtml(t)}</span>`)
+      .join("");
+    digestCard.innerHTML = `
+      <p class="digest-summary">${escapeHtml(data.summary ?? "")}</p>
+      <div class="digest-topics">${topicsHtml}</div>
+      <span class="digest-meta">
+        Covers ${data.source_session_count ?? 0} session(s) ·
+        Updated ${data.last_updated ? new Date(data.last_updated).toLocaleString() : "—"}
+      </span>
+    `;
+  }
+  digestCard.removeAttribute("hidden");
+}
+
+digestRebuildBtn?.addEventListener("click", async () => {
+  if (!digestCard) return;
+  digestCard.innerHTML = `<span style="color:var(--color-pistache);font-size:0.82rem">Rebuilding digest…</span>`;
+  digestCard.removeAttribute("hidden");
+
+  const headers = { "Content-Type": "application/json" };
+  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/retrieval-memory/rebuild`, { method: "POST", headers });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const data = await res.json();
+    renderDigestCard(data);
+  } catch (err) {
+    digestCard.innerHTML = `<p style="color:var(--color-pistache);font-size:0.82rem">
+      Rebuild failed: ${escapeHtml(err.message)}
+    </p>`;
+  }
+});
+
+digestViewBtn?.addEventListener("click", async () => {
+  const headers = {};
+  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/retrieval-memory/digest`, { headers });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const data = await res.json();
+    renderDigestCard(data);
+  } catch (err) {
+    if (digestCard) {
+      digestCard.innerHTML = `<p style="color:var(--color-pistache);font-size:0.82rem">
+        Failed: ${escapeHtml(err.message)}
+      </p>`;
+      digestCard.removeAttribute("hidden");
+    }
+  }
+});
+
+retrievalsLoadBtn?.addEventListener("click", async () => {
+  if (!retrievalsList) return;
+
+  const headers = {};
+  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/retrieval-memory/recent?limit=10`, { headers });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const entries = await res.json();
+
+    if (!entries.length) {
+      retrievalsList.innerHTML = `<p class="sidebar-empty" style="font-size:0.82rem">No retrieval events yet. Use Smart Mode to trigger retrieval.</p>`;
+    } else {
+      retrievalsList.innerHTML = "";
+      entries.forEach((e) => {
+        const item = document.createElement("div");
+        item.className = "retrieval-log-item";
+        item.innerHTML = `
+          <span class="retrieval-method-tag">${escapeHtml(e.retrieval_method)}</span>
+          <span class="retrieval-query">${escapeHtml(e.query)}</span>
+          <span class="retrieval-meta">${e.chunks_retrieved?.length ?? 0} chunks · ${new Date(e.timestamp).toLocaleTimeString()}</span>
+        `;
+        retrievalsList.appendChild(item);
+      });
+    }
+    retrievalsList.removeAttribute("hidden");
+  } catch (err) {
+    retrievalsList.innerHTML = `<p style="color:var(--color-pistache);font-size:0.82rem">
+      Failed: ${escapeHtml(err.message)} (requires Feature 6 server)
+    </p>`;
+    retrievalsList.removeAttribute("hidden");
+  }
+});
+

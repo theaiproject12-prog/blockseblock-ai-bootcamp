@@ -55,6 +55,53 @@ class OllamaProvider(OpenAIProvider):
         )
         self._provider_name = "ollama"
 
+        # Bonus Module 0.5.1 (Part B): optional privacy checks at startup.
+        # Enable with ENABLE_OLLAMA_PRIVACY_CHECKS=true in .env.
+        # See docs/ollama-privacy-guide.md for full documentation.
+        if settings.enable_ollama_privacy_checks:
+            self._run_privacy_checks()
+
+    def _run_privacy_checks(self) -> None:
+        """
+        Bonus Module 0.5.1 (Part B) — log startup privacy warnings for Ollama.
+
+        Two checks:
+          1. -cloud model tag: prompts will leave the machine (Ollama v0.12+)
+          2. OLLAMA_KEEP_HISTORY not disabled: chat history stored in plain text
+
+        See docs/ollama-privacy-guide.md for full details including how to
+        verify local inference, disable history, and configure air-gapped
+        deployment.
+        """
+        import os
+
+        model = settings.ollama_model
+
+        if "-cloud" in model.lower():
+            logger.warning(
+                "PRIVACY WARNING: Model '%s' has a -cloud suffix. "
+                "This model runs on Ollama's cloud servers — your prompts "
+                "WILL leave your machine. For local inference, use a model "
+                "without the -cloud suffix (e.g. 'llama3.2' instead of "
+                "'llama3.2-cloud'). See docs/ollama-privacy-guide.md.",
+                model,
+            )
+        else:
+            logger.info(
+                "Privacy check: model '%s' has no -cloud suffix — running locally.",
+                model,
+            )
+
+        keep_history = os.environ.get("OLLAMA_KEEP_HISTORY", "").lower()
+        if keep_history != "false":
+            logger.info(
+                "Privacy info: Ollama history logging is enabled (default). "
+                "Chat history is stored in plain text at ~/.ollama/history. "
+                "Set OLLAMA_KEEP_HISTORY=false before starting 'ollama serve' "
+                "to disable for sensitive workloads. "
+                "See docs/ollama-privacy-guide.md for details.",
+            )
+
     async def chat(
         self,
         messages: List[dict],
